@@ -29,7 +29,12 @@ const swaggerOptions = {
     },
     servers: [
       {
+        url: 'https://sigo-austech-backend.onrender.com',
+        description: 'Servidor de producción'
+      },
+      {
         url: 'http://localhost:5000',
+        description: 'Servidor de desarrollo'
       },
     ],
   },
@@ -43,8 +48,27 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middlewares
-app.use(helmet()); // Seguridad HTTP headers
-app.use(cors()); // Habilitar CORS
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+})); 
+
+// Configuración CORS mejorada
+app.use(cors({
+  origin: [
+    'http://localhost:5173',  // Para desarrollo local con Vite
+    'http://localhost:5174',  // Variante de puerto para Vite
+    'http://localhost:3000',  // Para desarrollo local con React/Next
+    'http://127.0.0.1:5173',  // En caso de usar dirección IP local
+    'http://127.0.0.1:3000',  // En caso de usar dirección IP local
+    // Cuando despliegues tu frontend, añade su URL aquí
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Total-Count'],
+  credentials: true,
+  maxAge: 86400 // Tiempo en segundos que el navegador puede cachear los resultados del pre-flight
+}));
+
 app.use(express.json()); // Parsear JSON
 app.use(morgan('dev')); // Logging de requests
 
