@@ -31,7 +31,8 @@ router.post(
     auth,
     checkRole(['Gerente', 'Administrador']),
     check('nombre', 'El nombre es requerido').not().isEmpty(),
-    check('email', 'Por favor incluye un email válido').isEmail(),
+    check('apellido', 'El apellido es requerido').not().isEmpty(),
+    check('email', 'Por favor incluya un email válido').isEmail(),
     check('password', 'La contraseña debe tener al menos 6 caracteres').isLength({ min: 6 }),
     check('rol_id', 'El rol es requerido').isNumeric(),
     validate

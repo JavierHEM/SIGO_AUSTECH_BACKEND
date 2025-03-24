@@ -78,7 +78,7 @@ const getUsuarioById = async (req, res, next) => {
  */
 const createUsuario = async (req, res, next) => {
   try {
-    const { nombre, email, password, rol_id } = req.body;
+    const { nombre, apellido, email, password, rol_id } = req.body;
 
     // Verificar que el rol existe
     const { data: rol, error: rolError } = await supabase
@@ -121,6 +121,7 @@ const createUsuario = async (req, res, next) => {
           {
             id: authData.user.id, // Usamos el mismo ID que Auth
             nombre,
+            apellido,
             email,
             rol_id
           }
@@ -162,7 +163,7 @@ const createUsuario = async (req, res, next) => {
 const updateUsuario = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { nombre, email, rol_id } = req.body;
+    const { nombre, apellido, email, rol_id } = req.body;
 
     // Verificar si el usuario existe
     const { data: existingUser, error: findError } = await supabase
@@ -193,7 +194,7 @@ const updateUsuario = async (req, res, next) => {
     // Actualizar usuario en nuestra tabla
     const { data, error } = await supabase
       .from('usuarios')
-      .update({ nombre, email, rol_id })
+      .update({ nombre, apellido, email, rol_id })
       .eq('id', id)
       .select()
       .single();

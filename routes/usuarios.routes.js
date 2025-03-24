@@ -34,10 +34,12 @@ router.get('/:id', getUsuarioById);
  * @desc Crear un nuevo usuario
  * @access Private (solo gerentes)
  */
+
 router.post(
   '/',
   [
     check('nombre', 'El nombre es requerido').not().isEmpty(),
+    check('apellido', 'El apellido es requerido').not().isEmpty(),
     check('email', 'Por favor incluya un email válido').isEmail(),
     check('password', 'La contraseña debe tener al menos 6 caracteres').isLength({ min: 6 }),
     check('rol_id', 'El rol es requerido').isNumeric(),
@@ -46,15 +48,11 @@ router.post(
   createUsuario
 );
 
-/**
- * @route PUT /api/usuarios/:id
- * @desc Actualizar un usuario existente
- * @access Private (solo gerentes)
- */
 router.put(
   '/:id',
   [
     check('nombre', 'El nombre es requerido').not().isEmpty(),
+    check('apellido', 'El apellido es requerido').not().isEmpty(),
     check('email', 'Por favor incluya un email válido').isEmail().optional(),
     check('rol_id', 'El rol es requerido').isNumeric(),
     validate
