@@ -63,7 +63,7 @@ function getSierraByCodigo(req, res, next) {
           .from('afilados')
           .select('*, tipos_afilado(nombre)')
           .eq('sierra_id', data.id)
-          .order('fecha_entrada', { ascending: false });
+          .order('fecha_afilado', { ascending: false });
         
         if (afiladosError) {
           console.error('Error al obtener historial de afilados:', afiladosError);
@@ -222,7 +222,7 @@ function getSierrasByCliente(req, res, next) {
               sucursales (id, nombre)
             `)
             .in('sucursal_id', sucursalIds)
-            .order('codigo')
+            .order('codigo_barra')
             .then(({ data, error }) => {
               if (error) {
                 return res.status(400).json({

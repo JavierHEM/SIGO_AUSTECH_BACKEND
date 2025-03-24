@@ -68,7 +68,7 @@ function createAfilado(req, res, next) {
               sierra_id,
               tipo_afilado_id,
               usuario_id: req.user.id,
-              fecha_afilado: new Date().toISOString(), // Usar fecha_afilado en lugar de fecha_entrada
+              fecha_afilado: new Date().toISOString(), // Usar fecha_afilado
               observaciones,
               ultimo_afilado: ultimo_afilado || false // Valor por defecto si no se proporciona
             }
@@ -231,7 +231,7 @@ function getAfiladosBySierra(req, res, next) {
             usuarios (id, nombre)
           `)
           .eq('sierra_id', id)
-          .order('fecha_entrada', { ascending: false });
+          .order('fecha_afilado', { ascending: false });
 
         if (error) {
           return res.status(400).json({
@@ -309,18 +309,18 @@ function getAfiladosBySucursal(req, res, next) {
               *,
               tipos_afilado (id, nombre),
               usuarios (id, nombre),
-              sierras (id, codigo, tipos_sierra(nombre))
+              sierras (id, codigo_barra, tipos_sierra(nombre))
             `)
             .in('sierra_id', sierraIds)
-            .order('fecha_entrada', { ascending: false });
+            .order('fecha_afilado', { ascending: false });
 
           // Aplicar filtros
           if (desde) {
-            query = query.gte('fecha_entrada', desde);
+            query = query.gte('fecha_afilado', desde);
           }
           
           if (hasta) {
-            query = query.lte('fecha_entrada', hasta);
+            query = query.lte('fecha_afilado', hasta);
           }
           
           if (pendientes === 'true') {
@@ -427,18 +427,18 @@ function getAfiladosByCliente(req, res, next) {
                   *,
                   tipos_afilado (id, nombre),
                   usuarios (id, nombre),
-                  sierras (id, codigo, sucursal_id, tipos_sierra(nombre), sucursales:sucursales(id, nombre))
+                  sierras (id, codigo_barra, sucursal_id, tipos_sierra(nombre), sucursales:sucursales(id, nombre))
                 `)
                 .in('sierra_id', sierraIds)
-                .order('fecha_entrada', { ascending: false });
+                .order('fecha_afilado', { ascending: false });
 
               // Aplicar filtros
               if (desde) {
-                query = query.gte('fecha_entrada', desde);
+                query = query.gte('fecha_afilado', desde);
               }
               
               if (hasta) {
-                query = query.lte('fecha_entrada', hasta);
+                query = query.lte('fecha_afilado', hasta);
               }
               
               if (pendientes === 'true') {
@@ -484,15 +484,25 @@ function getAfiladosByCliente(req, res, next) {
 function getAfiladosPendientes(req, res, next) {
   try {
     let query = supabase
-      .from('afilados')
-      .select(`
-        *,
-        tipos_afilado (id, nombre),
-        usuarios (id, nombre),
-        sierras (id, codigo, tipos_sierra(nombre), sucursales:sucursales(id, nombre, cliente_id, clientes:clientes(id, nombre)))
-      `)
-      .is('fecha_salida', null)
-      .order('fecha_entrada');
+    .from('afilados')
+    .select(`
+      *,
+      tipos_afilado:tipos_afilado (id, nombre),
+      usuarios:usuarios (id, nombre),
+      sierras:sierras (
+        id, 
+        codigo_barra, 
+        tipos_sierra:tipos_sierra(nombre), 
+        sucursales:sucursales(
+          id, 
+          nombre, 
+          cliente_id, 
+          clientes:clientes(id, nombre)
+        )
+      )
+    `)
+    .is('fecha_salida', null)
+    .order('fecha_afilado') 
     
     // Si es cliente, filtrar por sus sucursales asignadas
     if (req.user.roles.nombre === 'Cliente') {
@@ -531,11 +541,11 @@ function getAfiladosPendientes(req, res, next) {
                   *,
                   tipos_afilado (id, nombre),
                   usuarios (id, nombre),
-                  sierras (id, codigo, tipos_sierra(nombre), sucursales:sucursales(id, nombre, cliente_id, clientes:clientes(id, nombre)))
+                  sierras (id, codigo_barra, tipos_sierra(nombre), sucursales:sucursales(id, nombre, cliente_id, clientes:clientes(id, nombre)))
                 `)
                 .is('fecha_salida', null)
                 .in('sierra_id', sierraIds)
-                .order('fecha_entrada')
+                .order('fecha_afilado')
                 .then(({ data, error }) => {
                   if (error) {
                     return res.status(400).json({

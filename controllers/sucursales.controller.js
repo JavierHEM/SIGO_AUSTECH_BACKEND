@@ -8,7 +8,7 @@ const getSucursales = async (req, res, next) => {
   try {
     let query = supabase
       .from('sucursales')
-      .select('*, clientes(id, nombre)')
+      .select('*, clientes:clientes(id, nombre)')
       .order('id');
     
     // Si es cliente, solo ver las sucursales asignadas
