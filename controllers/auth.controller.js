@@ -51,9 +51,43 @@ const login = async (req, res, next) => {
       });
     }
 
+    // Determinar el rol del usuario
+    let rolNombre;
+    
+    if (usuario.roles) {
+      // Si la relación roles está disponible, usar directamente
+      rolNombre = usuario.roles.nombre;
+    } else {
+      // Si usuario.roles es null, obtener el rol con una consulta separada
+      console.log('Relación roles no disponible, obteniendo rol con consulta separada');
+      
+      const { data: rolData, error: rolError } = await supabase
+        .from('roles')
+        .select('nombre')
+        .eq('id', usuario.rol_id)
+        .single();
+
+      if (rolError) {
+        console.error('Error al obtener rol:', rolError);
+        return res.status(500).json({
+          success: false,
+          message: 'Error al obtener información del rol'
+        });
+      }
+      
+      if (!rolData) {
+        return res.status(404).json({
+          success: false,
+          message: 'Rol no encontrado para el usuario'
+        });
+      }
+      
+      rolNombre = rolData.nombre;
+    }
+
     // Obtener sucursales asignadas si es Cliente
     let sucursalesAsignadas = [];
-    if (usuario.roles.nombre === 'Cliente') {
+    if (rolNombre === 'Cliente') {
       const { data: sucursales, error: sucursalError } = await supabase
         .from('usuario_sucursal')
         .select('sucursal_id')
@@ -74,7 +108,7 @@ const login = async (req, res, next) => {
           id: usuario.id,
           nombre: usuario.nombre,
           email: usuario.email,
-          rol: usuario.roles.nombre
+          rol: rolNombre
         },
         sucursalesAsignadas,
         token: authData.session.access_token
