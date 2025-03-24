@@ -8,7 +8,7 @@ const getSucursales = async (req, res, next) => {
   try {
     let query = supabase
       .from('sucursales')
-      .select('*, clientes:clientes(id, nombre)')
+      .select('*') // Solo seleccionamos los datos básicos de sucursales
       .order('id');
     
     // Si es cliente, solo ver las sucursales asignadas
@@ -30,7 +30,7 @@ const getSucursales = async (req, res, next) => {
       }
     }
     
-    const { data, error } = await query;
+    const { data: sucursales, error } = await query;
 
     if (error) {
       return res.status(400).json({
@@ -40,9 +40,44 @@ const getSucursales = async (req, res, next) => {
       });
     }
 
+    // Si no hay sucursales, devolver array vacío
+    if (!sucursales || sucursales.length === 0) {
+      return res.json({
+        success: true,
+        data: []
+      });
+    }
+
+    // Obtener información de clientes en una consulta separada
+    const clienteIds = [...new Set(sucursales.map(s => s.cliente_id))];
+    
+    const { data: clientes, error: clientesError } = await supabase
+      .from('clientes')
+      .select('id, nombre')
+      .in('id', clienteIds);
+
+    if (clientesError) {
+      console.error('Error al obtener información de clientes:', clientesError);
+      // Continuamos aunque no podamos obtener los clientes
+    }
+
+    // Crear un mapa de clientes por ID para facilitar el acceso
+    const clientesMap = {};
+    if (clientes) {
+      clientes.forEach(cliente => {
+        clientesMap[cliente.id] = cliente;
+      });
+    }
+
+    // Enriquecer los datos de sucursales con la información de clientes
+    const enrichedSucursales = sucursales.map(sucursal => ({
+      ...sucursal,
+      clientes: clientesMap[sucursal.cliente_id] || { id: sucursal.cliente_id, nombre: 'Desconocido' }
+    }));
+
     res.json({
       success: true,
-      data
+      data: enrichedSucursales
     });
   } catch (error) {
     next(error);
