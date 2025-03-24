@@ -483,29 +483,9 @@ function getAfiladosByCliente(req, res, next) {
  */
 function getAfiladosPendientes(req, res, next) {
   try {
-    let query = supabase
-    .from('afilados')
-    .select(`
-      *,
-      tipos_afilado:tipos_afilado (id, nombre),
-      usuarios:usuarios (id, nombre),
-      sierras:sierras (
-        id, 
-        codigo_barra, 
-        tipos_sierra:tipos_sierra(nombre), 
-        sucursales:sucursales(
-          id, 
-          nombre, 
-          cliente_id, 
-          clientes:clientes(id, nombre)
-        )
-      )
-    `)
-    .is('fecha_salida', null)
-    .order('fecha_afilado') 
-    
     // Si es cliente, filtrar por sus sucursales asignadas
     if (req.user.roles.nombre === 'Cliente') {
+      // Primero, obtener las sucursales del usuario
       supabase
         .from('usuario_sucursal')
         .select('sucursal_id')
@@ -535,18 +515,18 @@ function getAfiladosPendientes(req, res, next) {
               
               const sierraIds = sierras.map(s => s.id);
               
+              // Consulta simplificada de afilados pendientes
               supabase
                 .from('afilados')
                 .select(`
                   *,
-                  tipos_afilado (id, nombre),
-                  usuarios (id, nombre),
-                  sierras (id, codigo_barra, tipos_sierra(nombre), sucursales:sucursales(id, nombre, cliente_id, clientes:clientes(id, nombre)))
+                  tipos_afilado(id, nombre),
+                  usuarios(id, nombre)
                 `)
                 .is('fecha_salida', null)
                 .in('sierra_id', sierraIds)
                 .order('fecha_afilado')
-                .then(({ data, error }) => {
+                .then(async ({ data, error }) => {
                   if (error) {
                     return res.status(400).json({
                       success: false,
@@ -555,9 +535,12 @@ function getAfiladosPendientes(req, res, next) {
                     });
                   }
 
+                  // Ahora, enriquecemos los datos obteniendo la información adicional por separado
+                  const enrichedData = await enrichAfiladosData(data);
+
                   res.json({
                     success: true,
-                    data
+                    data: enrichedData
                   });
                 })
                 .catch(error => {
@@ -572,9 +555,17 @@ function getAfiladosPendientes(req, res, next) {
           next(error);
         });
     } else {
-      // Para gerentes y administradores mostrar todos los pendientes
-      query
-        .then(({ data, error }) => {
+      // Para gerentes y administradores, consulta simplificada
+      supabase
+        .from('afilados')
+        .select(`
+          *,
+          tipos_afilado(id, nombre),
+          usuarios(id, nombre)
+        `)
+        .is('fecha_salida', null)
+        .order('fecha_afilado')
+        .then(async ({ data, error }) => {
           if (error) {
             return res.status(400).json({
               success: false,
@@ -583,9 +574,12 @@ function getAfiladosPendientes(req, res, next) {
             });
           }
 
+          // Enriquecer datos con información adicional
+          const enrichedData = await enrichAfiladosData(data);
+
           res.json({
             success: true,
-            data
+            data: enrichedData
           });
         })
         .catch(error => {
@@ -595,6 +589,91 @@ function getAfiladosPendientes(req, res, next) {
   } catch (error) {
     next(error);
   }
+}
+
+// Función auxiliar para enriquecer los datos de afilados con información de sierra, sucursal y cliente
+async function enrichAfiladosData(afilados) {
+  if (!afilados || afilados.length === 0) return [];
+
+  // Obtener los IDs de sierras
+  const sierraIds = [...new Set(afilados.map(a => a.sierra_id))];
+
+  // Obtener información de sierras
+  const { data: sierras } = await supabase
+    .from('sierras')
+    .select('id, codigo_barra, sucursal_id, tipo_sierra_id')
+    .in('id', sierraIds);
+
+  // Mapear sierras por ID para fácil acceso
+  const sierrasMap = {};
+  sierras.forEach(sierra => {
+    sierrasMap[sierra.id] = sierra;
+  });
+
+  // Obtener tipos de sierra
+  const tipoSierraIds = [...new Set(sierras.map(s => s.tipo_sierra_id))];
+  const { data: tiposSierra } = await supabase
+    .from('tipos_sierra')
+    .select('id, nombre')
+    .in('id', tipoSierraIds);
+
+  // Mapear tipos de sierra por ID
+  const tiposSierraMap = {};
+  tiposSierra.forEach(tipo => {
+    tiposSierraMap[tipo.id] = tipo;
+  });
+
+  // Obtener sucursales
+  const sucursalIds = [...new Set(sierras.map(s => s.sucursal_id))];
+  const { data: sucursales } = await supabase
+    .from('sucursales')
+    .select('id, nombre, cliente_id')
+    .in('id', sucursalIds);
+
+  // Mapear sucursales por ID
+  const sucursalesMap = {};
+  sucursales.forEach(sucursal => {
+    sucursalesMap[sucursal.id] = sucursal;
+  });
+
+  // Obtener clientes
+  const clienteIds = [...new Set(sucursales.map(s => s.cliente_id))];
+  const { data: clientes } = await supabase
+    .from('clientes')
+    .select('id, nombre')
+    .in('id', clienteIds);
+
+  // Mapear clientes por ID
+  const clientesMap = {};
+  clientes.forEach(cliente => {
+    clientesMap[cliente.id] = cliente;
+  });
+
+  // Construir la respuesta enriquecida
+  return afilados.map(afilado => {
+    const sierra = sierrasMap[afilado.sierra_id] || {};
+    const tipoSierra = sierra.tipo_sierra_id ? tiposSierraMap[sierra.tipo_sierra_id] || {} : {};
+    const sucursal = sierra.sucursal_id ? sucursalesMap[sierra.sucursal_id] || {} : {};
+    const cliente = sucursal.cliente_id ? clientesMap[sucursal.cliente_id] || {} : {};
+
+    return {
+      ...afilado,
+      sierras: {
+        id: sierra.id,
+        codigo_barra: sierra.codigo_barra,
+        tipos_sierra: tipoSierra,
+        sucursales: {
+          id: sucursal.id,
+          nombre: sucursal.nombre,
+          cliente_id: sucursal.cliente_id,
+          clientes: {
+            id: cliente.id,
+            nombre: cliente.nombre
+          }
+        }
+      }
+    };
+  });
 }
 
 // Exportar todas las funciones al final
