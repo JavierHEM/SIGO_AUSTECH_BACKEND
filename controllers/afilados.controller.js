@@ -676,6 +676,256 @@ async function enrichAfiladosData(afilados) {
   });
 }
 
+/**
+ * Obtener todos los afilados (filtrado según rol)
+ * @route GET /api/afilados/todos
+ */
+function getAllAfilados(req, res, next) {
+  try {
+    // Parámetros para filtrado opcional
+    const { desde, hasta, pendientes, sucursal_id, cliente_id } = req.query;
+    
+    // Si es cliente, filtrar por sus sucursales asignadas
+    if (req.user.roles.nombre === 'Cliente') {
+      // Obtener las sucursales del usuario
+      supabase
+        .from('usuario_sucursal')
+        .select('sucursal_id')
+        .eq('usuario_id', req.user.id)
+        .then(({ data: sucursalesUser }) => {
+          if (!sucursalesUser || sucursalesUser.length === 0) {
+            return res.json({
+              success: true,
+              data: []
+            });
+          }
+          
+          const sucursalIds = sucursalesUser.map(s => s.sucursal_id);
+
+          // Obtener sierras de esas sucursales
+          supabase
+            .from('sierras')
+            .select('id')
+            .in('sucursal_id', sucursalIds)
+            .then(({ data: sierras }) => {
+              if (!sierras || sierras.length === 0) {
+                return res.json({
+                  success: true,
+                  data: []
+                });
+              }
+              
+              const sierraIds = sierras.map(s => s.id);
+              
+              // Consulta de afilados básica
+              let query = supabase
+                .from('afilados')
+                .select(`
+                  *,
+                  tipos_afilado(id, nombre),
+                  usuarios(id, nombre)
+                `)
+                .in('sierra_id', sierraIds)
+                .order('fecha_afilado', { ascending: false });
+              
+              // Aplicar filtros adicionales
+              applyFilters(query, desde, hasta, pendientes)
+                .then(async ({ data, error }) => {
+                  if (error) {
+                    return res.status(400).json({
+                      success: false,
+                      message: 'Error al obtener afilados',
+                      error: error.message
+                    });
+                  }
+
+                  // Enriquecer los datos
+                  const enrichedData = await enrichAfiladosData(data);
+
+                  res.json({
+                    success: true,
+                    data: enrichedData
+                  });
+                })
+                .catch(error => {
+                  next(error);
+                });
+            })
+            .catch(error => {
+              next(error);
+            });
+        })
+        .catch(error => {
+          next(error);
+        });
+    } else {
+      // Para gerentes y administradores, consulta sin restricción de sucursales
+      let query = supabase
+        .from('afilados')
+        .select(`
+          *,
+          tipos_afilado(id, nombre),
+          usuarios(id, nombre)
+        `)
+        .order('fecha_afilado', { ascending: false });
+      
+      // Filtrar por sucursal si se especifica
+      if (sucursal_id) {
+        query = query.in('sierra_id', function(subQuery) {
+          return subQuery.from('sierras').select('id').eq('sucursal_id', sucursal_id);
+        });
+      }
+      
+      // Filtrar por cliente si se especifica
+      if (cliente_id) {
+        query = query.in('sierra_id', function(subQuery) {
+          return subQuery
+            .from('sierras')
+            .select('id')
+            .in('sucursal_id', function(subSubQuery) {
+              return subSubQuery.from('sucursales').select('id').eq('cliente_id', cliente_id);
+            });
+        });
+      }
+      
+      // Aplicar otros filtros
+      applyFilters(query, desde, hasta, pendientes)
+        .then(async ({ data, error }) => {
+          if (error) {
+            return res.status(400).json({
+              success: false,
+              message: 'Error al obtener afilados',
+              error: error.message
+            });
+          }
+
+          // Enriquecer los datos
+          const enrichedData = await enrichAfiladosData(data);
+
+          res.json({
+            success: true,
+            data: enrichedData
+          });
+        })
+        .catch(error => {
+          next(error);
+        });
+    }
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Función auxiliar para aplicar filtros comunes
+async function applyFilters(query, desde, hasta, pendientes) {
+  if (desde) {
+    query = query.gte('fecha_afilado', desde);
+  }
+  
+  if (hasta) {
+    query = query.lte('fecha_afilado', hasta);
+  }
+  
+  if (pendientes === 'true') {
+    query = query.is('fecha_salida', null);
+  }
+  
+  return await query;
+}
+
+// Función auxiliar para enriquecer los datos
+async function enrichAfiladosData(afilados) {
+  if (!afilados || afilados.length === 0) return [];
+
+  // Obtener los IDs de sierras
+  const sierraIds = [...new Set(afilados.map(a => a.sierra_id))];
+
+  // Obtener información de sierras
+  const { data: sierras } = await supabase
+    .from('sierras')
+    .select('id, codigo_barra, sucursal_id, tipo_sierra_id')
+    .in('id', sierraIds);
+
+  // Mapear sierras por ID
+  const sierrasMap = {};
+  if (sierras) {
+    sierras.forEach(sierra => {
+      sierrasMap[sierra.id] = sierra;
+    });
+  }
+
+  // Obtener tipos de sierra
+  const tipoSierraIds = sierras ? [...new Set(sierras.filter(s => s.tipo_sierra_id).map(s => s.tipo_sierra_id))] : [];
+  const { data: tiposSierra } = await supabase
+    .from('tipos_sierra')
+    .select('id, nombre')
+    .in('id', tipoSierraIds);
+
+  // Mapear tipos de sierra por ID
+  const tiposSierraMap = {};
+  if (tiposSierra) {
+    tiposSierra.forEach(tipo => {
+      tiposSierraMap[tipo.id] = tipo;
+    });
+  }
+
+  // Obtener sucursales
+  const sucursalIds = sierras ? [...new Set(sierras.filter(s => s.sucursal_id).map(s => s.sucursal_id))] : [];
+  const { data: sucursales } = await supabase
+    .from('sucursales')
+    .select('id, nombre, cliente_id')
+    .in('id', sucursalIds);
+
+  // Mapear sucursales por ID
+  const sucursalesMap = {};
+  if (sucursales) {
+    sucursales.forEach(sucursal => {
+      sucursalesMap[sucursal.id] = sucursal;
+    });
+  }
+
+  // Obtener clientes
+  const clienteIds = sucursales ? [...new Set(sucursales.filter(s => s.cliente_id).map(s => s.cliente_id))] : [];
+  const { data: clientes } = await supabase
+    .from('clientes')
+    .select('id, nombre')
+    .in('id', clienteIds);
+
+  // Mapear clientes por ID
+  const clientesMap = {};
+  if (clientes) {
+    clientes.forEach(cliente => {
+      clientesMap[cliente.id] = cliente;
+    });
+  }
+
+  // Construir la respuesta enriquecida
+  return afilados.map(afilado => {
+    const sierra = sierrasMap[afilado.sierra_id] || {};
+    const tipoSierra = sierra.tipo_sierra_id ? tiposSierraMap[sierra.tipo_sierra_id] || {} : {};
+    const sucursal = sierra.sucursal_id ? sucursalesMap[sierra.sucursal_id] || {} : {};
+    const cliente = sucursal.cliente_id ? clientesMap[sucursal.cliente_id] || {} : {};
+
+    return {
+      ...afilado,
+      sierras: {
+        id: sierra.id,
+        codigo_barra: sierra.codigo_barra,
+        tipos_sierra: tipoSierra,
+        sucursales: {
+          id: sucursal.id,
+          nombre: sucursal.nombre,
+          cliente_id: sucursal.cliente_id,
+          clientes: {
+            id: cliente.id,
+            nombre: cliente.nombre
+          }
+        }
+      }
+    };
+  });
+}
+
 // Exportar todas las funciones al final
 module.exports = {
   createAfilado,
@@ -683,5 +933,6 @@ module.exports = {
   getAfiladosBySierra,
   getAfiladosBySucursal,
   getAfiladosByCliente,
-  getAfiladosPendientes
+  getAfiladosPendientes,
+  getAllAfilados
 };

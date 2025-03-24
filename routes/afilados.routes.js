@@ -49,6 +49,13 @@ router.get('/sierra/:id', afiladosController.getAfiladosBySierra);
 router.get('/sucursal/:id', afiladosController.getAfiladosBySucursal);
 
 /**
+ * @route GET /api/afilados/todos
+ * @desc Obtener todos los afilados (filtrado según rol)
+ * @access Private
+ */
+router.get('/todos', afiladosController.getAllAfilados);
+
+/**
  * @route GET /api/afilados/cliente/:id
  * @desc Obtener historial de afilados por cliente
  * @access Private

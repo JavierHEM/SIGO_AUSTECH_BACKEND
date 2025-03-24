@@ -86,6 +86,173 @@ function getSierraByCodigo(req, res, next) {
 }
 
 /**
+ * Obtener todas las sierras
+ * @route GET /api/sierras/todas
+ */
+function getSierras(req, res, next) {
+  try {
+    // Si es cliente, filtrar por sus sucursales asignadas
+    if (req.user.roles.nombre === 'Cliente') {
+      supabase
+        .from('usuario_sucursal')
+        .select('sucursal_id')
+        .eq('usuario_id', req.user.id)
+        .then(({ data: sucursalesUser }) => {
+          if (!sucursalesUser || sucursalesUser.length === 0) {
+            return res.json({
+              success: true,
+              data: []
+            });
+          }
+          
+          const sucursalIds = sucursalesUser.map(s => s.sucursal_id);
+          
+          // Obtener sierras de las sucursales asignadas al usuario
+          supabase
+            .from('sierras')
+            .select('*')
+            .in('sucursal_id', sucursalIds)
+            .order('codigo_barra')
+            .then(async ({ data, error }) => {
+              if (error) {
+                return res.status(400).json({
+                  success: false,
+                  message: 'Error al obtener sierras',
+                  error: error.message
+                });
+              }
+
+              // Enriquecer datos con información relacionada
+              const enrichedData = await enrichSierrasData(data);
+
+              res.json({
+                success: true,
+                data: enrichedData
+              });
+            })
+            .catch(error => {
+              next(error);
+            });
+        })
+        .catch(error => {
+          next(error);
+        });
+    } else {
+      // Para gerentes y administradores, mostrar todas las sierras
+      supabase
+        .from('sierras')
+        .select('*')
+        .order('codigo_barra')
+        .then(async ({ data, error }) => {
+          if (error) {
+            return res.status(400).json({
+              success: false,
+              message: 'Error al obtener sierras',
+              error: error.message
+            });
+          }
+
+          // Enriquecer datos con información relacionada
+          const enrichedData = await enrichSierrasData(data);
+
+          res.json({
+            success: true,
+            data: enrichedData
+          });
+        })
+        .catch(error => {
+          next(error);
+        });
+    }
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Función auxiliar para enriquecer los datos de sierras
+async function enrichSierrasData(sierras) {
+  if (!sierras || sierras.length === 0) return [];
+
+  // Obtener IDs de tipos de sierra
+  const tipoSierraIds = [...new Set(sierras.map(s => s.tipo_sierra_id))];
+  const { data: tiposSierra } = await supabase
+    .from('tipos_sierra')
+    .select('id, nombre')
+    .in('id', tipoSierraIds);
+
+  // Mapear tipos de sierra por ID
+  const tiposSierraMap = {};
+  if (tiposSierra) {
+    tiposSierra.forEach(tipo => {
+      tiposSierraMap[tipo.id] = tipo;
+    });
+  }
+
+  // Obtener IDs de estados
+  const estadoIds = [...new Set(sierras.map(s => s.estado_id))];
+  const { data: estados } = await supabase
+    .from('estados_sierra')
+    .select('id, nombre')
+    .in('id', estadoIds);
+
+  // Mapear estados por ID
+  const estadosMap = {};
+  if (estados) {
+    estados.forEach(estado => {
+      estadosMap[estado.id] = estado;
+    });
+  }
+
+  // Obtener IDs de sucursales
+  const sucursalIds = [...new Set(sierras.map(s => s.sucursal_id))];
+  const { data: sucursales } = await supabase
+    .from('sucursales')
+    .select('id, nombre, cliente_id')
+    .in('id', sucursalIds);
+
+  // Mapear sucursales por ID
+  const sucursalesMap = {};
+  if (sucursales) {
+    sucursales.forEach(sucursal => {
+      sucursalesMap[sucursal.id] = sucursal;
+    });
+  }
+
+  // Obtener IDs de clientes
+  const clienteIds = sucursales ? [...new Set(sucursales.map(s => s.cliente_id))] : [];
+  const { data: clientes } = await supabase
+    .from('clientes')
+    .select('id, nombre')
+    .in('id', clienteIds);
+
+  // Mapear clientes por ID
+  const clientesMap = {};
+  if (clientes) {
+    clientes.forEach(cliente => {
+      clientesMap[cliente.id] = cliente;
+    });
+  }
+
+  // Construir la respuesta enriquecida
+  return sierras.map(sierra => {
+    const tipoSierra = tiposSierraMap[sierra.tipo_sierra_id] || {};
+    const estado = estadosMap[sierra.estado_id] || {};
+    const sucursal = sucursalesMap[sierra.sucursal_id] || {};
+    const cliente = sucursal.cliente_id ? clientesMap[sucursal.cliente_id] || {} : {};
+
+    return {
+      ...sierra,
+      tipos_sierra: tipoSierra,
+      estados_sierra: estado,
+      sucursales: {
+        ...sucursal,
+        clientes: cliente
+      }
+    };
+  });
+}
+
+/**
  * Obtener sierras por sucursal
  * @route GET /api/sierras/sucursal/:id
  */
@@ -535,5 +702,6 @@ module.exports = {
   getSierrasBySucursal,
   getSierrasByCliente,
   createSierra,
-  updateSierra
+  updateSierra,
+  getSierras
 };

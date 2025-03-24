@@ -52,6 +52,13 @@ router.post(
 );
 
 /**
+ * @route GET /api/sierras/todas
+ * @desc Obtener todas las sierras (principalmente para gerentes)
+ * @access Private
+ */
+router.get('/todas', getSierras);
+
+/**
  * @route PUT /api/sierras/:id
  * @desc Actualizar sierra
  * @access Private (todos los roles)
