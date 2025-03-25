@@ -1,22 +1,21 @@
 const supabase = require('../config/supabase');
 
+/**
+ * Buscar sierra por código de barras
+ * @route GET /api/sierras/codigo/:codigo
+ */
 function getSierraByCodigo(req, res, next) {
   try {
-    const { codigo } = req.query;
+    const { codigo } = req.params;
     
-    console.log("Buscando sierra con codigo: ", codigo);
-
-
-  
-console.log("Todas las sierras:", data);
-    
-
     if (!codigo) {
       return res.status(400).json({
         success: false,
-        message: 'El código de sierra es requerido'
+        message: 'El código de barras es requerido'
       });
     }
+
+    console.log("Buscando sierra con código de barras:", codigo);
 
     // Primera consulta: obtener los datos básicos de la sierra
     supabase
@@ -30,7 +29,7 @@ console.log("Todas las sierras:", data);
           if (error.code === 'PGRST116') {
             return res.status(404).json({
               success: false,
-              message: 'Sierra no encontrada con ese código'
+              message: 'Sierra no encontrada con ese código de barras'
             });
           }
           
@@ -42,7 +41,7 @@ console.log("Todas las sierras:", data);
         }
 
         // Si es cliente, verificar acceso a la sucursal
-        if (req.user.roles.nombre === 'Cliente') {
+        if (req.user.roles && req.user.roles.nombre === 'Cliente') {
           const { data: permisos } = await supabase
             .from('usuario_sucursal')
             .select('*')
@@ -84,7 +83,7 @@ console.log("Todas las sierras:", data);
         if (sucursal && sucursal.cliente_id) {
           const { data: clienteData } = await supabase
             .from('clientes')
-            .select('id, nombre')
+            .select('id, nombre, razon_social')
             .eq('id', sucursal.cliente_id)
             .single();
           
@@ -122,6 +121,126 @@ console.log("Todas las sierras:", data);
     next(error);
   }
 }
+
+/**
+ * Obtener sierra por ID
+ * @route GET /api/sierras/:id
+ */
+function getSierraById(req, res, next) {
+  try {
+    const { id } = req.params;
+    
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'El ID de la sierra es requerido'
+      });
+    }
+
+    // Primera consulta: obtener los datos básicos de la sierra
+    supabase
+      .from('sierras')
+      .select('*')
+      .eq('id', id)
+      .single()
+      .then(async ({ data: sierra, error }) => {
+        if (error) {
+          if (error.code === 'PGRST116') {
+            return res.status(404).json({
+              success: false,
+              message: 'Sierra no encontrada'
+            });
+          }
+          
+          return res.status(400).json({
+            success: false,
+            message: 'Error al obtener la sierra',
+            error: error.message
+          });
+        }
+
+        // Si es cliente, verificar acceso a la sucursal
+        if (req.user.roles && req.user.roles.nombre === 'Cliente') {
+          const { data: permisos } = await supabase
+            .from('usuario_sucursal')
+            .select('*')
+            .eq('usuario_id', req.user.id)
+            .eq('sucursal_id', sierra.sucursal_id);
+          
+          if (!permisos || permisos.length === 0) {
+            return res.status(403).json({
+              success: false,
+              message: 'No tiene permisos para ver esta sierra'
+            });
+          }
+        }
+        
+        // Obtener datos relacionados en consultas separadas
+        // Tipo de sierra
+        const { data: tipoSierra } = await supabase
+          .from('tipos_sierra')
+          .select('id, nombre')
+          .eq('id', sierra.tipo_sierra_id)
+          .single();
+        
+        // Estado de sierra
+        const { data: estadoSierra } = await supabase
+          .from('estados_sierra')
+          .select('id, nombre')
+          .eq('id', sierra.estado_id)
+          .single();
+        
+        // Sucursal
+        const { data: sucursal } = await supabase
+          .from('sucursales')
+          .select('id, nombre, cliente_id')
+          .eq('id', sierra.sucursal_id)
+          .single();
+        
+        // Cliente (si existe sucursal)
+        let cliente = null;
+        if (sucursal && sucursal.cliente_id) {
+          const { data: clienteData } = await supabase
+            .from('clientes')
+            .select('id, nombre, razon_social')
+            .eq('id', sucursal.cliente_id)
+            .single();
+          
+          cliente = clienteData;
+        }
+        
+        // Obtener el historial de afilados de la sierra
+        const { data: afilados } = await supabase
+          .from('afilados')
+          .select('*, tipos_afilado(nombre)')
+          .eq('sierra_id', sierra.id)
+          .order('fecha_afilado', { ascending: false });
+        
+        // Construir respuesta con todos los datos relacionados
+        const sierraCompleta = {
+          ...sierra,
+          tipos_sierra: tipoSierra || {},
+          estados_sierra: estadoSierra || {},
+          sucursales: sucursal ? {
+            ...sucursal,
+            clientes: cliente || {}
+          } : {},
+          afilados: afilados || []
+        };
+
+        res.json({
+          success: true,
+          data: sierraCompleta
+        });
+      })
+      .catch(error => {
+        next(error);
+      });
+  } catch (error) {
+    next(error);
+  }
+}
+
 
 /**
  * Obtener todas las sierras
@@ -741,5 +860,6 @@ module.exports = {
   getSierrasByCliente,
   createSierra,
   updateSierra,
-  getSierras
+  getSierras,
+  getSierraById
 };

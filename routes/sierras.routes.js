@@ -16,11 +16,11 @@ const { validate } = require('../middlewares/validation.middleware');
 router.use(auth);
 
 /**
- * @route GET /api/sierras?codigo=XXX
- * @desc Buscar sierra por código
+ * @route GET /api/sierras/codigo/:codigo
+ * @desc Buscar sierra por código de barras
  * @access Private
  */
-router.get('/', getSierraByCodigo);
+router.get('/codigo/:codigo', getSierraByCodigo);
 
 /**
  * @route GET /api/sierras/sucursal/:id
@@ -35,6 +35,13 @@ router.get('/sucursal/:id', checkSucursalAccess, getSierrasBySucursal);
  * @access Private
  */
 router.get('/cliente/:id', getSierrasByCliente);
+
+/**
+ * @route GET /api/sierras/:id
+ * @desc Obtener sierra por ID
+ * @access Private
+ */
+router.get('/:id', getSierraById);
 
 /**
  * @route POST /api/sierras
