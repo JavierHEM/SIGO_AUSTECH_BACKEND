@@ -7,7 +7,8 @@ const {
   getSierrasByCliente,
   createSierra,
   updateSierra,
-  getSierras
+  getSierras,
+  getSierraById
 } = require('../controllers/sierras.controller');
 const { auth, checkRole, checkSucursalAccess } = require('../middlewares/auth.middleware');
 const { validate } = require('../middlewares/validation.middleware');
