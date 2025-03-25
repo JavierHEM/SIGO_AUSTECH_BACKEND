@@ -4,6 +4,13 @@ function getSierraByCodigo(req, res, next) {
   try {
     const { codigo } = req.query;
     
+    console.log("Buscando sierra con codigo: ", codigo);
+
+
+  
+console.log("Todas las sierras:", data);
+    
+
     if (!codigo) {
       return res.status(400).json({
         success: false,
