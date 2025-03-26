@@ -209,80 +209,35 @@ function getSierraByCodigo(req, res, next) {
  */
 function getSierras(req, res, next) {
   try {
-    // Si es cliente, filtrar por sus sucursales asignadas
-    if (req.user.roles.nombre === 'Cliente') {
-      supabase
-        .from('usuario_sucursal')
-        .select('sucursal_id')
-        .eq('usuario_id', req.user.id)
-        .then(({ data: sucursalesUser }) => {
-          if (!sucursalesUser || sucursalesUser.length === 0) {
-            return res.json({
-              success: true,
-              data: []
-            });
-          }
-          
-          const sucursalIds = sucursalesUser.map(s => s.sucursal_id);
-          
-          // Obtener sierras de las sucursales asignadas al usuario
-          supabase
-            .from('sierras')
-            .select('*')
-            .in('sucursal_id', sucursalIds)
-            .order('codigo_barra')
-            .then(async ({ data, error }) => {
-              if (error) {
-                return res.status(400).json({
-                  success: false,
-                  message: 'Error al obtener sierras',
-                  error: error.message
-                });
-              }
-
-              // Enriquecer datos con información relacionada
-              const enrichedData = await enrichSierrasData(data);
-
-              res.json({
-                success: true,
-                data: enrichedData
-              });
-            })
-            .catch(error => {
-              next(error);
-            });
-        })
-        .catch(error => {
-          next(error);
-        });
-    } else {
-      // Para gerentes y administradores, mostrar todas las sierras
-      supabase
-        .from('sierras')
-        .select('*')
-        .order('codigo_barra')
-        .then(async ({ data, error }) => {
-          if (error) {
-            return res.status(400).json({
-              success: false,
-              message: 'Error al obtener sierras',
-              error: error.message
-            });
-          }
-
-          // Enriquecer datos con información relacionada
-          const enrichedData = await enrichSierrasData(data);
-
-          res.json({
-            success: true,
-            data: enrichedData
+    console.log("Obteniendo todas las sierras");
+    
+    // Usar la Service Role Key para omitir RLS
+    supabase
+      .from('sierras')
+      .select('*, tipos_sierra(id, nombre), estados_sierra(id, nombre), sucursales(id, nombre, cliente_id, clientes(id, razon_social))')
+      .then(({ data, error }) => {
+        if (error) {
+          console.error("Error al obtener sierras:", error);
+          return res.status(400).json({
+            success: false,
+            message: 'Error al obtener sierras',
+            error: error.message
           });
-        })
-        .catch(error => {
-          next(error);
+        }
+        
+        console.log(`Se encontraron ${data ? data.length : 0} sierras`);
+        
+        res.json({
+          success: true,
+          data: data || []
         });
-    }
+      })
+      .catch(error => {
+        console.error("Error en la consulta:", error);
+        next(error);
+      });
   } catch (error) {
+    console.error("Error en getSierras:", error);
     next(error);
   }
 }

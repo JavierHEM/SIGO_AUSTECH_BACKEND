@@ -17,6 +17,13 @@ const { validate } = require('../middlewares/validation.middleware');
 router.use(auth);
 
 /**
+ * @route GET /api/sierras/todas
+ * @desc Obtener todas las sierras (principalmente para gerentes)
+ * @access Private
+ */
+router.get('/todas', getSierras);
+
+/**
  * @route GET /api/sierras/codigo/:codigo
  * @desc Buscar sierra por código de barras
  * @access Private
@@ -38,13 +45,6 @@ router.get('/sucursal/:id', checkSucursalAccess, getSierrasBySucursal);
 router.get('/cliente/:id', getSierrasByCliente);
 
 /**
- * @route GET /api/sierras/:id
- * @desc Obtener sierra por ID
- * @access Private
- */
-router.get('/:id', getSierraById);
-
-/**
  * @route POST /api/sierras
  * @desc Crear nueva sierra
  * @access Private (todos los roles)
@@ -59,13 +59,6 @@ router.post(
   ],
   createSierra
 );
-
-/**
- * @route GET /api/sierras/todas
- * @desc Obtener todas las sierras (principalmente para gerentes)
- * @access Private
- */
-router.get('/todas', getSierras);
 
 /**
  * @route PUT /api/sierras/:id
@@ -83,5 +76,12 @@ router.put(
   ],
   updateSierra
 );
+
+/**
+ * @route GET /api/sierras/:id
+ * @desc Obtener sierra por ID
+ * @access Private
+ */
+router.get('/:id', getSierraById);
 
 module.exports = router;
