@@ -55,7 +55,12 @@ app.use(helmet({
 // Configuración CORS mejorada
 app.use(cors({
   origin: [
-  
+    'http://localhost:5173',  // Para desarrollo local con Vite
+    'http://localhost:5174',  // Variante de puerto para Vite
+    'http://localhost:3000',  // Para desarrollo local con React/Next
+    'http://127.0.0.1:5173',  // En caso de usar dirección IP local
+    'http://127.0.0.1:3000',  // En caso de usar dirección IP local
+    // Cuando despliegues tu frontend, añade su URL aquí
     "https://austech-jade.vercel.app"
 
   ],
