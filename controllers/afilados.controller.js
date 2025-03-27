@@ -677,6 +677,151 @@ async function enrichAfiladosData(afilados) {
 }
 
 /**
+ * Obtener un afilado por ID
+ * @route GET /api/afilados/:id
+ */
+function getAfiladoById(req, res, next) {
+  try {
+    const { id } = req.params;
+    const numericId = parseInt(id, 10);
+    
+    if (isNaN(numericId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'El ID del afilado debe ser un número válido'
+      });
+    }
+    
+    // Obtener el afilado con su información relacionada
+    supabase
+      .from('afilados')
+      .select('*')
+      .eq('id', numericId)
+      .single()
+      .then(async ({ data: afilado, error }) => {
+        if (error) {
+          return res.status(404).json({
+            success: false,
+            message: 'Afilado no encontrado'
+          });
+        }
+        
+        if (!afilado) {
+          return res.status(404).json({
+            success: false,
+            message: 'Afilado no encontrado'
+          });
+        }
+        
+        // Verificar permisos solo si es usuario Cliente
+        if (req.user.roles && req.user.roles.nombre === 'Cliente') {
+          // Obtener la sierra para verificar la sucursal
+          const { data: sierra } = await supabase
+            .from('sierras')
+            .select('sucursal_id')
+            .eq('id', afilado.sierra_id)
+            .single();
+            
+          if (sierra) {
+            // Verificar si el usuario tiene acceso a esa sucursal
+            const { data: permisos } = await supabase
+              .from('usuario_sucursal')
+              .select('*')
+              .eq('usuario_id', req.user.id)
+              .eq('sucursal_id', sierra.sucursal_id);
+              
+            if (!permisos || permisos.length === 0) {
+              return res.status(403).json({
+                success: false,
+                message: 'No tiene permisos para ver este afilado'
+              });
+            }
+          }
+        }
+        
+        // Obtener datos relacionados
+        const { data: tipoAfilado } = await supabase
+          .from('tipos_afilado')
+          .select('id, nombre')
+          .eq('id', afilado.tipo_afilado_id)
+          .single();
+          
+        const { data: usuario } = await supabase
+          .from('usuarios')
+          .select('id, nombre')
+          .eq('id', afilado.usuario_id)
+          .single();
+          
+        const { data: sierra } = await supabase
+          .from('sierras')
+          .select('id, codigo_barra, sucursal_id, tipo_sierra_id')
+          .eq('id', afilado.sierra_id)
+          .single();
+          
+        let sucursal = null;
+        let cliente = null;
+        let tipoSierra = null;
+        
+        if (sierra) {
+          // Obtener tipo de sierra
+          const { data: tipoData } = await supabase
+            .from('tipos_sierra')
+            .select('id, nombre')
+            .eq('id', sierra.tipo_sierra_id)
+            .single();
+            
+          tipoSierra = tipoData;
+          
+          // Obtener sucursal
+          const { data: sucursalData } = await supabase
+            .from('sucursales')
+            .select('id, nombre, cliente_id')
+            .eq('id', sierra.sucursal_id)
+            .single();
+            
+          sucursal = sucursalData;
+          
+          // Obtener cliente
+          if (sucursal && sucursal.cliente_id) {
+            const { data: clienteData } = await supabase
+              .from('clientes')
+              .select('id, razon_social')
+              .eq('id', sucursal.cliente_id)
+              .single();
+              
+            cliente = clienteData;
+          }
+        }
+        
+        // Construir respuesta enriquecida
+        const afiladoCompleto = {
+          ...afilado,
+          tipos_afilado: tipoAfilado || {},
+          usuarios: usuario || {},
+          sierras: sierra ? {
+            ...sierra,
+            tipos_sierra: tipoSierra || {},
+            sucursales: sucursal ? {
+              ...sucursal,
+              clientes: cliente || {}
+            } : {}
+          } : {}
+        };
+        
+        res.json({
+          success: true,
+          data: afiladoCompleto
+        });
+      })
+      .catch(error => {
+        next(error);
+      });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
  * Obtener todos los afilados (filtrado según rol)
  * @route GET /api/afilados/todos
  */
@@ -833,6 +978,102 @@ async function applyFilters(query, desde, hasta, pendientes) {
   return await query;
 }
 
+/**
+ * Registrar fecha de salida para múltiples afilados
+ * @route POST /api/afilados/salida-masiva
+ */
+function registrarSalidaMasiva(req, res, next) {
+  try {
+    const { afilado_ids } = req.body;
+    
+    // Validar que se recibió un array de IDs
+    if (!Array.isArray(afilado_ids) || afilado_ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Se requiere un array no vacío de IDs de afilados'
+      });
+    }
+    
+    // Obtener los afilados para verificar permisos
+    supabase
+      .from('afilados')
+      .select('id, sierra_id, fecha_salida, sierras(sucursal_id)')
+      .in('id', afilado_ids)
+      .is('fecha_salida', null)
+      .then(async ({ data: afilados, error: afiladosError }) => {
+        if (afiladosError) {
+          return res.status(400).json({
+            success: false,
+            message: 'Error al obtener los afilados',
+            error: afiladosError.message
+          });
+        }
+        
+        // Verificar que se encontraron afilados pendientes
+        if (!afilados || afilados.length === 0) {
+          return res.status(404).json({
+            success: false,
+            message: 'No se encontraron afilados pendientes con los IDs proporcionados'
+          });
+        }
+        
+        // Verificar permisos para cada afilado si el usuario es Cliente
+        if (req.user.roles.nombre === 'Cliente') {
+          // Obtener todas las sucursales del usuario
+          const { data: sucursalesUser } = await supabase
+            .from('usuario_sucursal')
+            .select('sucursal_id')
+            .eq('usuario_id', req.user.id);
+            
+          const sucursalIds = sucursalesUser.map(s => s.sucursal_id);
+          
+          // Verificar que el usuario tiene acceso a todas las sucursales de los afilados
+          for (const afilado of afilados) {
+            if (!sucursalIds.includes(afilado.sierras.sucursal_id)) {
+              return res.status(403).json({
+                success: false,
+                message: `No tiene permisos para registrar la salida del afilado ID ${afilado.id}`
+              });
+            }
+          }
+        }
+        
+        // Todos los afilados son accesibles, actualizar fecha de salida
+        const fechaActual = new Date().toISOString();
+        const { data: updated, error: updateError } = await supabase
+          .from('afilados')
+          .update({ fecha_salida: fechaActual })
+          .in('id', afilado_ids)
+          .is('fecha_salida', null);
+          
+        if (updateError) {
+          return res.status(400).json({
+            success: false,
+            message: 'Error al actualizar los afilados',
+            error: updateError.message
+          });
+        }
+        
+        // Consultar los afilados actualizados para devolverlos en la respuesta
+        const { data: afiladosActualizados } = await supabase
+          .from('afilados')
+          .select('*')
+          .in('id', afilado_ids);
+        
+        res.json({
+          success: true,
+          message: `Se registró la salida de ${afilados.length} afilados`,
+          data: afiladosActualizados || []
+        });
+      })
+      .catch(error => {
+        next(error);
+      });
+  } catch (error) {
+    next(error);
+  }
+}
+
 // Función auxiliar para enriquecer los datos
 async function enrichAfiladosData(afilados) {
   if (!afilados || afilados.length === 0) return [];
@@ -934,5 +1175,7 @@ module.exports = {
   getAfiladosBySucursal,
   getAfiladosByCliente,
   getAfiladosPendientes,
-  getAllAfilados
+  getAllAfilados,
+  getAfiladoById,
+  registrarSalidaMasiva
 };

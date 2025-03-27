@@ -6,26 +6,39 @@ const supabase = require('../config/supabase');
  */
 const getSucursales = async (req, res, next) => {
   try {
-    console.log("Obteniendo todas las sucursales");
-    console.log("Usuario autenticado:", req.user ? req.user.id : "No definido");
-    console.log("Rol del usuario:", req.user && req.user.roles ? req.user.roles.nombre : "No definido");
-    
-    // Consulta principal para obtener todas las sucursales
-    const { data: sucursales, error } = await supabase
+    let query = supabase
       .from('sucursales')
-      .select('*, clientes(id, razon_social, nombre)')
-      .order('nombre');
+      .select('*')
+      .order('id');
+    
+    // Si es cliente, solo ver las sucursales asignadas
+    if (req.user.roles.nombre === 'Cliente') {
+      const { data: sucursalesAsignadas } = await supabase
+        .from('usuario_sucursal')
+        .select('sucursal_id')
+        .eq('usuario_id', req.user.id);
+      
+      if (sucursalesAsignadas && sucursalesAsignadas.length > 0) {
+        const sucursalIds = sucursalesAsignadas.map(s => s.sucursal_id);
+        query = query.in('id', sucursalIds);
+      } else {
+        // Si no tiene sucursales asignadas, no mostrar ninguna
+        return res.json({
+          success: true,
+          data: []
+        });
+      }
+    }
+    
+    const { data: sucursales, error } = await query;
 
     if (error) {
-      console.error("Error al obtener sucursales:", error);
       return res.status(400).json({
         success: false,
         message: 'Error al obtener sucursales',
         error: error.message
       });
     }
-
-    console.log(`Se encontraron ${sucursales ? sucursales.length : 0} sucursales`);
 
     // Si no hay sucursales, devolver array vacío
     if (!sucursales || sucursales.length === 0) {
@@ -35,37 +48,37 @@ const getSucursales = async (req, res, next) => {
       });
     }
 
-    // Filtrar sucursales solo si el usuario es de tipo Cliente
-    // y mantener todas para Gerentes y Administradores
-    let sucursalesFiltradas = sucursales;
+    // Obtener información de clientes en una consulta separada
+    const clienteIds = [...new Set(sucursales.map(s => s.cliente_id))];
     
-    if (req.user && req.user.roles && req.user.roles.nombre === 'Cliente') {
-      console.log("Filtrando sucursales para usuario Cliente");
-      
-      const { data: sucursalesAsignadas } = await supabase
-        .from('usuario_sucursal')
-        .select('sucursal_id')
-        .eq('usuario_id', req.user.id);
-      
-      if (sucursalesAsignadas && sucursalesAsignadas.length > 0) {
-        const sucursalIds = sucursalesAsignadas.map(s => s.sucursal_id);
-        console.log("Sucursales asignadas:", sucursalIds);
-        
-        sucursalesFiltradas = sucursales.filter(s => sucursalIds.includes(s.id));
-      } else {
-        console.log("El usuario Cliente no tiene sucursales asignadas");
-        sucursalesFiltradas = [];
-      }
+    const { data: clientes, error: clientesError } = await supabase
+      .from('clientes')
+      .select('id, nombre')
+      .in('id', clienteIds);
+
+    if (clientesError) {
+      // Continuamos aunque no podamos obtener los clientes
     }
 
-    console.log(`Devolviendo ${sucursalesFiltradas.length} sucursales después del filtrado`);
-    
+    // Crear un mapa de clientes por ID para facilitar el acceso
+    const clientesMap = {};
+    if (clientes) {
+      clientes.forEach(cliente => {
+        clientesMap[cliente.id] = cliente;
+      });
+    }
+
+    // Enriquecer los datos de sucursales con la información de clientes
+    const enrichedSucursales = sucursales.map(sucursal => ({
+      ...sucursal,
+      clientes: clientesMap[sucursal.cliente_id] || { id: sucursal.cliente_id, nombre: 'Desconocido' }
+    }));
+
     res.json({
       success: true,
-      data: sucursalesFiltradas
+      data: enrichedSucursales
     });
   } catch (error) {
-    console.error("Error en getSucursales:", error);
     next(error);
   }
 };
@@ -94,9 +107,10 @@ const getSucursalById = async (req, res, next) => {
       }
     }
 
-    const { data, error } = await supabase
+    // Consulta simplificada para obtener solo la sucursal
+    const { data: sucursal, error } = await supabase
       .from('sucursales')
-      .select('*, clientes(id, nombre)')
+      .select('*')
       .eq('id', id)
       .single();
 
@@ -108,9 +122,29 @@ const getSucursalById = async (req, res, next) => {
       });
     }
 
+    // Obtener cliente relacionado en una consulta separada
+    let cliente = null;
+    if (sucursal.cliente_id) {
+      const { data: clienteData, error: clienteError } = await supabase
+        .from('clientes')
+        .select('*')
+        .eq('id', sucursal.cliente_id)
+        .single();
+        
+      if (!clienteError) {
+        cliente = clienteData;
+      }
+    }
+
+    // Combinar datos
+    const sucursalCompleta = {
+      ...sucursal,
+      cliente: cliente
+    };
+
     res.json({
       success: true,
-      data
+      data: sucursalCompleta
     });
   } catch (error) {
     next(error);

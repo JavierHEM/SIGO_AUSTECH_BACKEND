@@ -69,4 +69,18 @@ router.get('/cliente/:id', afiladosController.getAfiladosByCliente);
  */
 router.get('/pendientes', afiladosController.getAfiladosPendientes);
 
+/**
+ * @route GET /api/afilados/:id
+ * @desc Obtener un afilado por ID
+ * @access Private
+ */
+router.get('/:id', afiladosController.getAfiladoById);
+
+/**
+ * @route POST /api/afilados/salida-masiva
+ * @desc Registrar fecha de salida para múltiples afilados
+ * @access Private
+ */
+router.post('/salida-masiva', afiladosController.registrarSalidaMasiva);
+
 module.exports = router;
