@@ -396,29 +396,25 @@ function getAfiladosByCliente(req, res, next) {
         .select('id')
         .eq('cliente_id', id)
         .then(({ data: sucursales, error: sucursalError }) => {
-          if (sucursalError || !sucursales || sucursales.length === 0) {
-            return res.json({
-              success: true,
-              data: []
-            });
-          }
+          // ... código existente ...
 
           const sucursalIds = sucursales.map(s => s.id);
 
           // Obtener sierras de esas sucursales
           supabase
             .from('sierras')
-            .select('id')
+            .select('id, fecha_registro') // Asegúrate de incluir fecha_registro aquí
             .in('sucursal_id', sucursalIds)
             .then(({ data: sierras, error: sierrasError }) => {
-              if (sierrasError || !sierras || sierras.length === 0) {
-                return res.json({
-                  success: true,
-                  data: []
-                });
-              }
+              // ... código existente ...
 
               const sierraIds = sierras.map(s => s.id);
+              
+              // Crear un mapa de fechas de registro de sierras
+              const sierrasFechasMap = {};
+              sierras.forEach(sierra => {
+                sierrasFechasMap[sierra.id] = sierra.fecha_registro;
+              });
 
               // Construir consulta base
               let query = supabase
@@ -433,17 +429,7 @@ function getAfiladosByCliente(req, res, next) {
                 .order('fecha_afilado', { ascending: false });
 
               // Aplicar filtros
-              if (desde) {
-                query = query.gte('fecha_afilado', desde);
-              }
-              
-              if (hasta) {
-                query = query.lte('fecha_afilado', hasta);
-              }
-              
-              if (pendientes === 'true') {
-                query = query.is('fecha_salida', null);
-              }
+              // ... código existente para filtros ...
               
               query
                 .then(({ data, error }) => {
@@ -455,9 +441,15 @@ function getAfiladosByCliente(req, res, next) {
                     });
                   }
 
+                  // Añadir la fecha_registro a cada afilado
+                  const dataConFechaRegistro = data.map(afilado => ({
+                    ...afilado,
+                    sierra_fecha_registro: sierrasFechasMap[afilado.sierra_id]
+                  }));
+
                   res.json({
                     success: true,
-                    data
+                    data: dataConFechaRegistro
                   });
                 })
                 .catch(error => {
