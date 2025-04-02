@@ -368,15 +368,19 @@ const getSucursalesByCliente = async (req, res, next) => {
  */
 const getSucursalesVinculadas = async (req, res, next) => {
   try {
-    // Obtener el ID del usuario del token
+    // Obtener el ID del usuario del token (que es un UUID)
     const userId = req.user.id;
     
-    if (!userId) {
+    // Asegurarnos de que el ID es un UUID válido
+    if (!userId || typeof userId !== 'string') {
+      console.error('ID de usuario inválido:', userId);
       return res.status(400).json({
         success: false,
-        message: 'No se pudo identificar al usuario'
+        message: 'ID de usuario inválido o no presente en el token'
       });
     }
+    
+    console.log('Buscando sucursales para usuario ID:', userId);
     
     // Buscar las entradas en usuario_sucursal
     const { data: usuarioSucursales, error: usuarioSucursalError } = await supabase
@@ -385,6 +389,7 @@ const getSucursalesVinculadas = async (req, res, next) => {
       .eq('usuario_id', userId);
     
     if (usuarioSucursalError) {
+      console.error('Error al consultar usuario_sucursal:', usuarioSucursalError);
       return res.status(400).json({
         success: false,
         message: 'Error al obtener relaciones usuario-sucursal',
@@ -394,11 +399,14 @@ const getSucursalesVinculadas = async (req, res, next) => {
     
     // Si no hay relaciones, devolver array vacío
     if (!usuarioSucursales || usuarioSucursales.length === 0) {
+      console.log('No se encontraron sucursales para el usuario:', userId);
       return res.json({
         success: true,
         data: []
       });
     }
+    
+    console.log('Sucursales encontradas para usuario:', usuarioSucursales.length);
     
     // Extraer los IDs de sucursales
     const sucursalIds = usuarioSucursales.map(us => us.sucursal_id);
@@ -410,6 +418,7 @@ const getSucursalesVinculadas = async (req, res, next) => {
       .in('id', sucursalIds);
     
     if (sucursalError) {
+      console.error('Error al obtener sucursales:', sucursalError);
       return res.status(400).json({
         success: false,
         message: 'Error al obtener sucursales',
@@ -417,11 +426,14 @@ const getSucursalesVinculadas = async (req, res, next) => {
       });
     }
     
+    console.log('Datos de sucursales recuperados:', sucursales?.length || 0);
+    
     res.json({
       success: true,
-      data: sucursales
+      data: sucursales || []
     });
   } catch (error) {
+    console.error('Error general en getSucursalesVinculadas:', error);
     next(error);
   }
 };
