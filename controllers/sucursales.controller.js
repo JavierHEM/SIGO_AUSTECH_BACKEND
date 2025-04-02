@@ -362,6 +362,69 @@ const getSucursalesByCliente = async (req, res, next) => {
     next(error);
   }
 };
+/**
+ * Obtener sucursales vinculadas al usuario actual
+ * @route GET /api/sucursales/vinculadas
+ */
+const getSucursalesVinculadas = async (req, res, next) => {
+  try {
+    // Obtener el ID del usuario del token
+    const userId = req.user.id;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'No se pudo identificar al usuario'
+      });
+    }
+    
+    // Buscar las entradas en usuario_sucursal
+    const { data: usuarioSucursales, error: usuarioSucursalError } = await supabase
+      .from('usuario_sucursal')
+      .select('sucursal_id')
+      .eq('usuario_id', userId);
+    
+    if (usuarioSucursalError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Error al obtener relaciones usuario-sucursal',
+        error: usuarioSucursalError.message
+      });
+    }
+    
+    // Si no hay relaciones, devolver array vacío
+    if (!usuarioSucursales || usuarioSucursales.length === 0) {
+      return res.json({
+        success: true,
+        data: []
+      });
+    }
+    
+    // Extraer los IDs de sucursales
+    const sucursalIds = usuarioSucursales.map(us => us.sucursal_id);
+    
+    // Obtener las sucursales completas
+    const { data: sucursales, error: sucursalError } = await supabase
+      .from('sucursales')
+      .select('*, clientes(*)')
+      .in('id', sucursalIds);
+    
+    if (sucursalError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Error al obtener sucursales',
+        error: sucursalError.message
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: sucursales
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 module.exports = {
   getSucursales,
@@ -369,5 +432,6 @@ module.exports = {
   createSucursal,
   updateSucursal,
   deleteSucursal,
-  getSucursalesByCliente
+  getSucursalesByCliente,
+  getSucursalesVinculadas
 };

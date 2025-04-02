@@ -7,13 +7,21 @@ const {
   createSucursal,
   updateSucursal,
   deleteSucursal,
-  getSucursalesByCliente
+  getSucursalesByCliente,
+  getSucursalesVinculadas
 } = require('../controllers/sucursales.controller');
 const { auth, checkRole, checkSucursalAccess } = require('../middlewares/auth.middleware');
 const { validate } = require('../middlewares/validation.middleware');
 
 // Middleware para todas las rutas
 router.use(auth);
+
+/**
+ * @route GET /api/sucursales/vinculadas
+ * @desc Obtener sucursales vinculadas al usuario actual
+ * @access Private
+ */
+router.get('/vinculadas', getSucursalesVinculadas);
 
 /**
  * @route GET /api/sucursales
