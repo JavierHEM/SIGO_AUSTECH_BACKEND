@@ -368,48 +368,85 @@ const getSucursalesByCliente = async (req, res, next) => {
  */
 const getSucursalesVinculadas = async (req, res, next) => {
   try {
-    // Obtener el ID del usuario del token (que es un UUID)
+    // Depuración del objeto req.user completo
+    console.log('Objeto req.user completo:', JSON.stringify(req.user));
+    
+    // Obtener el ID del usuario del token
     const userId = req.user.id;
     
-    // Asegurarnos de que el ID es un UUID válido
-    if (!userId || typeof userId !== 'string') {
-      console.error('ID de usuario inválido:', userId);
-      return res.status(400).json({
-        success: false,
-        message: 'ID de usuario inválido o no presente en el token'
-      });
-    }
+    console.log('Tipo de userId:', typeof userId);
+    console.log('Valor de userId:', userId);
     
-    console.log('Buscando sucursales para usuario ID:', userId);
+    // Verificar token y permisos
+    console.log('Roles del usuario:', req.user.roles);
+    console.log('Email del usuario:', req.user.email);
     
-    // Buscar las entradas en usuario_sucursal
-    const { data: usuarioSucursales, error: usuarioSucursalError } = await supabase
+    // Consulta directa para verificar todas las entradas de usuario_sucursal
+    const { data: todasRelaciones, error: errorTodasRelaciones } = await supabase
       .from('usuario_sucursal')
-      .select('sucursal_id')
-      .eq('usuario_id', userId);
+      .select('*');
+      
+    console.log('Total de relaciones en la tabla:', todasRelaciones?.length);
+    console.log('Primeras 3 relaciones:', JSON.stringify(todasRelaciones?.slice(0, 3)));
     
-    if (usuarioSucursalError) {
-      console.error('Error al consultar usuario_sucursal:', usuarioSucursalError);
-      return res.status(400).json({
-        success: false,
-        message: 'Error al obtener relaciones usuario-sucursal',
-        error: usuarioSucursalError.message
-      });
+    // Intentar diferentes formas de consulta
+    // 1. Usando eq con el UUID
+    const { data: relacionesEq, error: errorEq } = await supabase
+      .from('usuario_sucursal')
+      .select('*')
+      .eq('usuario_id', userId);
+      
+    console.log('Relaciones encontradas con .eq:', relacionesEq?.length);
+    
+    // 2. Usando ilike para búsqueda aproximada
+    const { data: relacionesIlike, error: errorIlike } = await supabase
+      .from('usuario_sucursal')
+      .select('*')
+      .ilike('usuario_id', `%${userId}%`);
+      
+    console.log('Relaciones encontradas con .ilike:', relacionesIlike?.length);
+    
+    // 3. Intentar convertir el UUID a string si es necesario
+    const usuarioIdString = String(userId);
+    const { data: relacionesString, error: errorString } = await supabase
+      .from('usuario_sucursal')
+      .select('*')
+      .eq('usuario_id', usuarioIdString);
+      
+    console.log('Relaciones encontradas con String(userId):', relacionesString?.length);
+    
+    // Verificar estructura de la tabla
+    const { data: infoTabla } = await supabase
+      .rpc('pg_get_tabledef', { _tbl: 'usuario_sucursal' })
+      .single();
+      
+    console.log('Estructura de la tabla usuario_sucursal:', infoTabla);
+    
+    // Si hemos encontrado relaciones en alguna de las pruebas, usarlas
+    let usuarioSucursales = relacionesEq;
+    if (!usuarioSucursales || usuarioSucursales.length === 0) {
+      usuarioSucursales = relacionesIlike;
+    }
+    if (!usuarioSucursales || usuarioSucursales.length === 0) {
+      usuarioSucursales = relacionesString;
     }
     
-    // Si no hay relaciones, devolver array vacío
+    // Si aún no hay relaciones, devolver array vacío
     if (!usuarioSucursales || usuarioSucursales.length === 0) {
-      console.log('No se encontraron sucursales para el usuario:', userId);
       return res.json({
         success: true,
-        data: []
+        data: [],
+        debug: {
+          userId,
+          userIdType: typeof userId,
+          totalRelaciones: todasRelaciones?.length || 0
+        }
       });
     }
-    
-    console.log('Sucursales encontradas para usuario:', usuarioSucursales.length);
     
     // Extraer los IDs de sucursales
     const sucursalIds = usuarioSucursales.map(us => us.sucursal_id);
+    console.log('IDs de sucursales encontrados:', sucursalIds);
     
     // Obtener las sucursales completas
     const { data: sucursales, error: sucursalError } = await supabase
@@ -426,15 +463,24 @@ const getSucursalesVinculadas = async (req, res, next) => {
       });
     }
     
-    console.log('Datos de sucursales recuperados:', sucursales?.length || 0);
+    console.log('Sucursales recuperadas:', sucursales?.length || 0);
     
     res.json({
       success: true,
-      data: sucursales || []
+      data: sucursales || [],
+      debug: {
+        userId,
+        relacionesEncontradas: usuarioSucursales.length,
+        sucursalIds
+      }
     });
   } catch (error) {
     console.error('Error general en getSucursalesVinculadas:', error);
-    next(error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor',
+      error: error.message
+    });
   }
 };
 
