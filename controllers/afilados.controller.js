@@ -1159,6 +1159,134 @@ async function enrichAfiladosData(afilados) {
   });
 }
 
+/**
+ * Marca múltiples afilados como "último afilado" en una sola operación
+ * @param {Object} req - Objeto de solicitud Express
+ * @param {Object} res - Objeto de respuesta Express
+ * @param {Function} next - Función para pasar al siguiente middleware
+ */
+const marcarUltimoAfiladoMasivo = async (req, res, next) => {
+  try {
+    // Verificar que el usuario tiene rol de Gerente o Administrador
+    if (req.user.roles.nombre !== 'Gerente' && req.user.roles.nombre !== 'Administrador') {
+      return res.status(403).json({
+        success: false,
+        message: 'Solo los usuarios con rol de Gerente o Administrador pueden realizar esta operación'
+      });
+    }
+
+    const { afiladoIds } = req.body;
+    
+    // Validar que se hayan proporcionado IDs
+    if (!afiladoIds || !Array.isArray(afiladoIds) || afiladoIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Debe proporcionar un array válido de IDs de afilado'
+      });
+    }
+    
+    // Registrar la acción en logs para auditoría
+    console.log(`Usuario ${req.user.id} (${req.user.nombre || req.user.email}) ha solicitado marcar como último afilado los registros con IDs:`, afiladoIds);
+    
+    // Obtener todos los afilados en una sola consulta para validar que existan
+    const { data: afilados, error: afiladosError } = await supabase
+      .from('afilados')
+      .select('id, sierra_id, ultimo_afilado')
+      .in('id', afiladoIds);
+    
+    if (afiladosError) {
+      console.error("Error al obtener afilados:", afiladosError);
+      return res.status(500).json({
+        success: false,
+        message: 'Error al consultar afilados',
+        error: afiladosError.message
+      });
+    }
+    
+    if (!afilados || afilados.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No se encontraron afilados con los IDs proporcionados'
+      });
+    }
+    
+    // Validar que todos los afilados existan
+    if (afilados.length !== afiladoIds.length) {
+      const afiladosEncontrados = afilados.map(a => a.id);
+      const noEncontrados = afiladoIds.filter(id => !afiladosEncontrados.includes(id));
+      
+      return res.status(400).json({
+        success: false,
+        message: `No se encontraron algunos afilados: ${noEncontrados.join(', ')}`
+      });
+    }
+    
+    // Verificar si algún afilado ya está marcado como último afilado
+    const yaUltimoAfilado = afilados.filter(afilado => afilado.ultimo_afilado);
+    
+    if (yaUltimoAfilado.length > 0) {
+      const afiladosYaMarcados = yaUltimoAfilado.map(a => a.id).join(', ');
+      
+      return res.status(400).json({
+        success: false,
+        message: `Algunos afilados ya están marcados como último afilado: ${afiladosYaMarcados}`
+      });
+    }
+    
+    // Obtener lista de todas las sierras involucradas
+    const sierraIds = [...new Set(afilados.map(a => a.sierra_id))];
+    
+    // Actualizar todos los afilados
+    const { data: updateResult, error: updateError } = await supabase
+      .from('afilados')
+      .update({
+        ultimo_afilado: true,
+        updated_at: new Date().toISOString()
+      })
+      .in('id', afiladoIds);
+    
+    if (updateError) {
+      console.error("Error al actualizar afilados:", updateError);
+      return res.status(500).json({
+        success: false,
+        message: 'Error al actualizar afilados',
+        error: updateError.message
+      });
+    }
+    
+    // Opcional: Registrar la acción en la tabla de bitácora si existe
+    try {
+      await supabase
+        .from('bitacora')
+        .insert([{
+          usuario_id: req.user.id,
+          accion: 'AFILADO_ULTIMO_AFILADO_MASIVO',
+          tabla: 'afilados',
+          descripcion: `Marcó ${afiladoIds.length} afilado(s) como último afilado`,
+          detalles: JSON.stringify({ afiladoIds, sierraIds }),
+          fecha: new Date().toISOString()
+        }]);
+    } catch (bitacoraError) {
+      // Si hay error al registrar en bitácora, solo lo registramos pero no afecta la respuesta
+      console.warn("Error al registrar en bitácora:", bitacoraError);
+    }
+    
+    return res.status(200).json({
+      success: true,
+      message: `Se han marcado ${afiladoIds.length} afilado(s) como último afilado correctamente.`,
+      data: {
+        actualizados: afiladoIds.length,
+        afiladoIds,
+        sierraIds
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error en marcarUltimoAfiladoMasivo:', error);
+    next(error);
+  }
+};
+
 // Exportar todas las funciones al final
 module.exports = {
   createAfilado,
@@ -1169,5 +1297,6 @@ module.exports = {
   getAfiladosPendientes,
   getAllAfilados,
   getAfiladoById,
-  registrarSalidaMasiva
+  registrarSalidaMasiva,
+  marcarUltimoAfiladoMasivo
 };

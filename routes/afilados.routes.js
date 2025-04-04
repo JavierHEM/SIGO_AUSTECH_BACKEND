@@ -5,6 +5,9 @@ const afiladosController = require('../controllers/afilados.controller');
 const { auth } = require('../middlewares/auth.middleware');
 const { validate } = require('../middlewares/validation.middleware');
 
+const authMiddleware = require('../middlewares/auth.middleware');
+const { checkRole } = authMiddleware;
+
 // Middleware para todas las rutas
 router.use(auth);
 
@@ -82,5 +85,21 @@ router.get('/:id', afiladosController.getAfiladoById);
  * @access Private
  */
 router.post('/salida-masiva', afiladosController.registrarSalidaMasiva);
+
+/**
+ * @route POST /api/afilados/ultimo-afilado-masivo
+ * @desc Marcar múltiples afilados como último afilado
+ * @access Private (solo gerentes)
+ */
+router.post(
+  '/ultimo-afilado-masivo',
+  auth,
+  checkRole(['Gerente', 'Administrador']),
+  [
+    check('afiladoIds', 'Se requiere un array de IDs de afilado').isArray().notEmpty(),
+    validate
+  ],
+  afiladosController.marcarUltimoAfiladoMasivo
+);
 
 module.exports = router;
