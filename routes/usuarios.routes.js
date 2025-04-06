@@ -1,14 +1,7 @@
 const express = require('express');
 const { check } = require('express-validator');
 const router = express.Router();
-const {
-  getUsuarios,
-  getUsuarioById,
-  createUsuario,
-  updateUsuario,
-  deleteUsuario,
-  asignarSucursales
-} = require('../controllers/usuarios.controller');
+const usuariosController = require('../controllers/usuarios.controller');
 const { auth, checkRole } = require('../middlewares/auth.middleware');
 const { validate } = require('../middlewares/validation.middleware');
 
@@ -20,21 +13,20 @@ router.use(auth, checkRole(['Gerente']));
  * @desc Obtener todos los usuarios
  * @access Private (solo gerentes)
  */
-router.get('/', getUsuarios);
+router.get('/', usuariosController.getUsuarios);
 
 /**
  * @route GET /api/usuarios/:id
  * @desc Obtener un usuario por ID
  * @access Private (solo gerentes)
  */
-router.get('/:id', getUsuarioById);
+router.get('/:id', usuariosController.getUsuarioById);
 
 /**
  * @route POST /api/usuarios
  * @desc Crear un nuevo usuario
  * @access Private (solo gerentes)
  */
-
 router.post(
   '/',
   [
@@ -45,9 +37,14 @@ router.post(
     check('rol_id', 'El rol es requerido').isNumeric(),
     validate
   ],
-  createUsuario
+  usuariosController.createUsuario
 );
 
+/**
+ * @route PUT /api/usuarios/:id
+ * @desc Actualizar un usuario
+ * @access Private (solo gerentes)
+ */
 router.put(
   '/:id',
   [
@@ -57,7 +54,26 @@ router.put(
     check('rol_id', 'El rol es requerido').isNumeric(),
     validate
   ],
-  updateUsuario
+  usuariosController.updateUsuario
+);
+
+/**
+ * @route PUT /api/usuarios/:id/cambiar-password
+ * @desc Cambiar la contraseña de un usuario
+ * @access Private (usuario propio o gerentes)
+ */
+router.put(
+  '/:id/cambiar-password',
+  [
+    check('current_password', 'La contraseña actual es requerida').not().isEmpty(),
+    check('password', 'La nueva contraseña debe tener al menos 6 caracteres').isLength({ min: 6 }),
+    check('password_confirmation', 'La confirmación de contraseña es requerida').not().isEmpty(),
+    validate
+  ],
+  // Usar auth sin checkRole para permitir que cualquier usuario autenticado pueda acceder
+  // La verificación de permisos se realiza en el controlador
+  auth,
+  usuariosController.cambiarPassword
 );
 
 /**
@@ -65,7 +81,7 @@ router.put(
  * @desc Eliminar un usuario
  * @access Private (solo gerentes)
  */
-router.delete('/:id', deleteUsuario);
+router.delete('/:id', usuariosController.deleteUsuario);
 
 /**
  * @route POST /api/usuarios/:id/sucursales
@@ -78,7 +94,7 @@ router.post(
     check('sucursales', 'Se requiere un array de IDs de sucursales').isArray(),
     validate
   ],
-  asignarSucursales
+  usuariosController.asignarSucursales
 );
 
 module.exports = router;

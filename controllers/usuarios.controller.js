@@ -156,6 +156,113 @@ const createUsuario = async (req, res, next) => {
   }
 };
 
+// Añadir esta función al usuarios.controller.js
+
+/**
+ * Cambiar contraseña de un usuario
+ * @route PUT /api/usuarios/:id/cambiar-password
+ */
+const cambiarPassword = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { current_password, password, password_confirmation } = req.body;
+
+    // Verificar que las contraseñas coincidan
+    if (password !== password_confirmation) {
+      return res.status(400).json({
+        success: false,
+        message: 'Las contraseñas no coinciden'
+      });
+    }
+
+    // Verificar que el usuario existe
+    const { data: usuario, error: userError } = await supabase
+      .from('usuarios')
+      .select('email')
+      .eq('id', id)
+      .single();
+
+    if (userError || !usuario) {
+      return res.status(404).json({
+        success: false,
+        message: 'Usuario no encontrado'
+      });
+    }
+
+    // Si el usuario autenticado es diferente al usuario que se está modificando,
+    // y no es un administrador, rechazar la operación
+    const authUser = req.user;
+    const isAdmin = authUser.roles && (authUser.roles.nombre === 'Gerente' || authUser.roles.nombre === 'Administrador');
+    const isSelfUpdate = authUser.id === id;
+
+    if (!isSelfUpdate && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'No tienes permisos para cambiar la contraseña de este usuario'
+      });
+    }
+
+    // Si es actualización propia, verificar la contraseña actual
+    if (isSelfUpdate) {
+      try {
+        // Verificar la contraseña actual
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: usuario.email,
+          password: current_password
+        });
+
+        if (signInError) {
+          return res.status(400).json({
+            success: false,
+            message: 'La contraseña actual es incorrecta'
+          });
+        }
+      } catch (authError) {
+        console.error('Error al verificar contraseña actual:', authError);
+        return res.status(500).json({
+          success: false,
+          message: 'Error al verificar la contraseña actual'
+        });
+      }
+    }
+
+    // Cambiar la contraseña en Supabase Auth
+    try {
+      // Usamos updateUserById porque estamos en un contexto administrativo (API backend)
+      const { error: updateError } = await supabase.auth.admin.updateUserById(
+        id,
+        { password }
+      );
+
+      if (updateError) {
+        console.error('Error al actualizar contraseña:', updateError);
+        return res.status(400).json({
+          success: false,
+          message: 'Error al actualizar la contraseña',
+          error: updateError.message
+        });
+      }
+
+      // Registrar el cambio de contraseña (opcional)
+      console.log(`Contraseña actualizada para usuario ${id} (${usuario.email})`);
+
+      return res.json({
+        success: true,
+        message: 'Contraseña actualizada correctamente'
+      });
+    } catch (error) {
+      console.error('Error al cambiar contraseña:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error interno al actualizar la contraseña'
+      });
+    }
+  } catch (error) {
+    console.error('Error en cambiarPassword:', error);
+    next(error);
+  }
+};
+
 /**
  * Actualizar un usuario
  * @route PUT /api/usuarios/:id
@@ -356,5 +463,6 @@ module.exports = {
   createUsuario,
   updateUsuario,
   deleteUsuario,
-  asignarSucursales
+  asignarSucursales,
+  cambiarPassword
 };
